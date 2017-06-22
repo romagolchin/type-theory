@@ -1,8 +1,6 @@
+open Common;;
 open String;;
 open Char;;
-
-type peano = Z | S of peano;; (* òèïû íåîáõîäèìî êîïèðîâàòü â ðåàëèçàöèþ *)
-type lambda = Var of string | Abs of string * lambda | App of lambda * lambda;;
 
 let rec peano_of_int x = if x = 0 then Z else S (peano_of_int (x - 1));;
 
@@ -46,16 +44,19 @@ let is_abs x = match x with
     | Abs (_, _) -> true
     | _ -> false
 
-let rec string_of_lambda x = match x with
+let rec string_of_lambda x = 
+    let paren s = "(" ^ s ^ ")" in
+    match x with
     | Var s -> s
     | Abs (x, t) -> (string_of_char lambda) ^ x ^ "." ^ (string_of_lambda t)
     | App (p, q) -> let sp = string_of_lambda p in 
                         let sq = string_of_lambda q in 
                             let sq' = match q with
-                                | App (_, _) -> "(" ^ sq ^ ")"
+                                | App (_, _) -> paren sq
                                 | _ -> sq
                                 in match p with 
-                                    | Abs (_, _) -> "(" ^ sp  ^ ") " ^ sq'
+                                    | Abs (_, _) -> paren sp ^ " " ^ sq'
+                                    | App (_, Abs _) -> paren sp ^ " " ^ sq'
                                     | _ -> sp ^ " " ^ sq';;
 
 let get_var l = match l with

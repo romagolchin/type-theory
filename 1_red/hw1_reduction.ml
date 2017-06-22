@@ -7,6 +7,11 @@ module String_map = Map.Make (String);;
 
 type indexed_lambda = IVar of int | IApp of (indexed_lambda * indexed_lambda) | IAbs of indexed_lambda;;
 
+let is_none x = 
+    match x with
+    | None -> true
+    | _ -> false;;
+
 
 let rec set_of_free_vars t = match t with
     | Var x -> String_set.singleton x
@@ -19,7 +24,8 @@ let rec free_to_subst what where var =
         match where with
             | Var x -> true
             | App (p, q) -> (free_to_subst what p var) && (free_to_subst what q var)
-            | Abs (y, body) -> var = y || (not (String_set.mem y fv)) && (free_to_subst what body var);;
+            | Abs (y, body) -> 
+                var = y || (not (String_set.mem y fv)) && (free_to_subst what body var);;
 
 
 let rec free_vars term = String_set.elements (set_of_free_vars term)
@@ -41,9 +47,10 @@ let rec to_indexed_lambda fv term =
             helper term String_map.empty 0;;
 
 let rec from_indexed_lambda fv term = 
-    let base = List.fold_left (fun longest_var var -> if String.length longest_var < String.length var 
-                                                            then var
-                                                            else longest_var) "" fv in 
+    let base = List.fold_left (fun longest_var var -> 
+                                    if String.length longest_var < String.length var 
+                                        then var
+                                        else longest_var) "" fv in 
     let fv_array = Array.of_list fv in
     let rec helper t depth =
         match t with
@@ -63,61 +70,52 @@ let rec string_of_indexed_lambda iterm =
     | IVar i -> string_of_int i;;
 
 
-let rec subst what where var = failwith "";;
+let rec subst what where var = 
+    match where with
+    | Var x -> if x = var then what else Var x
+    | App (p, q) -> App (subst what p var, subst what q var)
+    | Abs (x, body) -> if x = var then Abs (x, body) else Abs (x, subst what body var);;
 
-let rec subst_indexed where what = 
-    let shift term delta = 
-        let rec helper t depth = 
-            match t with
-            | IVar i -> if i > depth then IVar (i + delta) else IVar i
-            | IApp (p, q) -> IApp (helper p depth, helper q depth)
-            | IAbs body -> IAbs (helper body (depth + 1)) in
-        helper term 0 in
-    let rec helper i_term depth subst =
-        match i_term with
-        | IVar i -> if i = depth then (shift subst depth) else IVar i  
-        | IApp (p, q) -> IApp ((helper p depth subst), (helper q depth subst))
-        | IAbs body -> IAbs (helper body (depth + 1) subst) in
-    helper where 1 what;;
+
 
 (* (Some res) if term has been reduced to res, None otherwise *)
-let rec indexed_lambda_reduction (t : indexed_lambda) : indexed_lambda option = 
+let rec reduce_nice (t : lambda) : lambda option = 
     match t with
-    | IApp (IAbs body, q) -> Some (subst_indexed body q)
-    | IApp (p, q) -> 
-        let res_p = indexed_lambda_reduction p in
+    | App (Abs (x, body), q) -> Some (subst q body x)
+    | App (p, q) -> 
+        let res_p = reduce_nice p in
             (match res_p with
-            | Some x -> Some (IApp (x, q))
-            | None -> let res_q = indexed_lambda_reduction q in
+            | Some x -> Some (App (x, q))
+            | None -> let res_q = reduce_nice q in
                 (match res_q with
-                | Some x -> Some (IApp (p, x))
+                | Some x -> Some (App (p, x))
                 | None -> None))
-    | IAbs body -> 
-        let reduced = indexed_lambda_reduction body in
+    | Abs (x, body) -> 
+        let reduced = reduce_nice body in
         (match reduced with
-        | Some x -> Some (IAbs x)
+        | Some r -> Some (Abs (x, r))
         | _ -> None)
-    | IVar i -> None;;
+    | Var x -> None;;
 
+
+(* converting to and from indexed_lambda is needed to guarantee that all free vars' names
+    are different from those ob bound vars *)
+let reduce term = 
+    let fv = free_vars term in
+    term |> to_indexed_lambda fv |> from_indexed_lambda fv |> reduce_nice;;
 
 let normal_beta_reduction term = 
-    let fv = free_vars term in
-    let res = term |> to_indexed_lambda fv |> indexed_lambda_reduction in
+    let res = reduce term in
     match res with 
         | None -> failwith "Term is in normal form"
-        | Some x -> from_indexed_lambda fv x;;
+        | Some x -> x;;
 
 let rec is_alpha_equivalent term term' = 
     let fv = String_set.elements 
         ( String_set.union (set_of_free_vars term) (set_of_free_vars term')) in
             to_indexed_lambda fv term = to_indexed_lambda fv term';;
 
-let is_normal_form term = 
-    let is_none x = 
-        match x with
-        | None -> true
-        | _ -> false in
-    term |> to_indexed_lambda (free_vars term) |> indexed_lambda_reduction |> is_none;;
+let is_normal_form term = term |> reduce |> is_none;;
 
 let () = 
     let test_str = "(\\x.x \\x.x) (y \\y.x z (\\y.y))" in
@@ -125,6 +123,12 @@ let () =
     let test' = lambda_of_string  "(\\x1.x1 \\x.x) (y \\y1.x z (\\y.y))" in
     let fv = free_vars test in
     let after = test |> to_indexed_lambda fv |> from_indexed_lambda fv in
+    (* let simple = lambda_of_string "(\\x.x \\x.x) (y \\y.x)" in *)
+    let simple = lambda_of_string "\\x.x" in
     printf "before: %s\nafter: %s\n" test_str (string_of_lambda after);
     printf "%B\n" (is_alpha_equivalent test test');
     print_string_list (free_vars test);
+    printf "Nice form of %s is %s\n" (string_of_lambda test) (test |> to_indexed_lambda fv |> from_indexed_lambda fv |> string_of_lambda);
+    printf "%s reduces to %s\n" (string_of_lambda simple) (simple |> normal_beta_reduction |> string_of_lambda);
+    printf "%s\n" (string_of_lambda simple);
+    printf "%s\n" ("(y \\x1.x) \\x2.x2" |> lambda_of_string |> string_of_lambda);
