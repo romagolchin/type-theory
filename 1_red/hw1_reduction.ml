@@ -117,7 +117,7 @@ let rec is_alpha_equivalent term term' =
 
 let is_normal_form term = term |> reduce |> is_none;;
 
-let () = 
+(* let () = 
     let test_str = "(\\x.x \\x.x) (y \\y.x z (\\y.y))" in
     let test = lambda_of_string test_str in
     let test' = lambda_of_string  "(\\x1.x1 \\x.x) (y \\y1.x z (\\y.y))" in
@@ -131,4 +131,4 @@ let () =
     printf "Nice form of %s is %s\n" (string_of_lambda test) (test |> to_indexed_lambda fv |> from_indexed_lambda fv |> string_of_lambda);
     printf "%s reduces to %s\n" (string_of_lambda simple) (simple |> normal_beta_reduction |> string_of_lambda);
     printf "%s\n" (string_of_lambda simple);
-    printf "%s\n" ("(y \\x1.x) \\x2.x2" |> lambda_of_string |> string_of_lambda);
+    printf "%s\n" ("(y \\x1.x) \\x2.x2" |> lambda_of_string |> string_of_lambda); *)
