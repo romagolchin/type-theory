@@ -47,10 +47,11 @@ let rec to_indexed_lambda fv term =
             helper term String_map.empty 0;;
 
 let rec from_indexed_lambda fv term = 
-    let base = List.fold_left (fun longest_var var -> 
+    let base' = List.fold_left (fun longest_var var -> 
                                     if String.length longest_var < String.length var 
                                         then var
                                         else longest_var) "" fv in 
+    let base = if String.length base' = 0 then "x" else base' in
     let fv_array = Array.of_list fv in
     let rec helper t depth =
         match t with
