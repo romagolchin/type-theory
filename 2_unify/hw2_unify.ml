@@ -1,10 +1,24 @@
 module String_map = Map.Make (String);;
 type algebraic_term = Var of string | Fun of string * (algebraic_term list)
 
-(* type substitution = (string * algebraic_term) list
-type equation = algebraic_term * algebraic_term
-type system_of_equations = equation list 
- *)
+
+let str_max s t = 
+	if String.length t > String.length s then t else s;;
+
+let new_func_symbol alg_terms =
+	let rec longest_id t = 
+		match t with
+		| Var x -> x 
+		| Fun (f, args) -> 
+			List.fold_left str_max f (List.rev_map longest_id args) in
+	(List.fold_left str_max "" (List.rev_map longest_id alg_terms)) ^ "1" 
+	;;
+
+let system_to_equation sys = 
+	let (l, r) = List.split sys in
+	let f = str_max (new_func_symbol l) (new_func_symbol r) in
+	(Fun (f, l), Fun (f, r));; 
+
 let rec apply_substitution subst_list alg_term = 
 	let subst_map = List.fold_left (fun map (var, rhs) -> String_map.add var rhs map)
 						String_map.empty subst_list in
