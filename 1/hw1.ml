@@ -1,6 +1,9 @@
-open Common;;
 open String;;
 open Char;;
+
+type lambda = Var of string | Abs of string * lambda | App of lambda * lambda
+type peano = Z | S of peano
+
 
 let rec peano_of_int x = if x = 0 then Z else S (peano_of_int (x - 1));;
 

@@ -1,4 +1,3 @@
-open Common
 open Printf
 open Hw1
 open Hw2_unify
@@ -36,8 +35,8 @@ let rename_lambda term =
     let cnt = ref 0 in 
     let rec helper t bound = 
         match t with
-        | Common.Var x -> let x' = if String_map.mem x bound then String_map.find x bound else x
-                                in Common.Var x'
+        | Hw1.Var x -> let x' = if String_map.mem x bound then String_map.find x bound else x
+                                in Hw1.Var x'
         | App (p, q) -> App (helper p bound, helper q bound)
         | Abs (var, body) -> cnt := !cnt + 1;
                              let var' = (base ^ (string_of_int !cnt)) in
@@ -50,7 +49,7 @@ let lambda_to_system (term : lambda) : ((algebraic_term * algebraic_term) list) 
     let impl l r = Fun ("Impl", [l; r]) in
     let rec helper t =
         match t with
-        | Common.Var x -> 
+        | Hw1.Var x -> 
             ([], Hw2_unify.Var ("t" ^ x))
         | App (p, q) -> cnt := !cnt + 1; 
                         let new_type = Hw2_unify.Var ("t" ^ (string_of_int !cnt)) in
@@ -93,12 +92,12 @@ let () =
     let s = lambda_of_string "\\x.\\y.\\z.x z (y z)" in
     let t = lambda_of_string "\\x.\\y.\\z.x z y" in
     let fls = lambda_of_string "\\x.\\y.y" in
-    let vara = Common.Var "a" in
-    let varb = Common.Var "b" in
+    let vara = Hw1.Var "a" in
+    let varb = Hw1.Var "b" in
     let neg = Abs ("a", App (App (vara, fls), k)) in
     let xor = Abs ("a", Abs ("b", App (App (vara, App (neg, varb)), varb))) in
     let test = [i; k; s; t; App (s, k); App (App (s, k), k); App (i, App (i, s)); neg; xor] in
-    (* let (sys, tp) = lambda_to_system (Abs ("x", Common.Var "y")) in *)
+    (* let (sys, tp) = lambda_to_system (Abs ("x", Hw1.Var "y")) in *)
     printf "Oktai's \n";
     List.iter (fun sys ->   printf "System:\n%s\n" (string_of_sys sys);
                             let sol = solve_system sys

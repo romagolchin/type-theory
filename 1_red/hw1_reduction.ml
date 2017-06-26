@@ -1,5 +1,4 @@
 open Hw1
-open Common
 open Printf
 module String_set = Set.Make (String);;
 
@@ -137,8 +136,8 @@ let get_n_var () =
 let rename_lambda map term =
     let rec helper t bound = 
         match t with
-        | Common.Var x -> let x' = if String_map.mem x bound then String_map.find x bound else x
-                                in Common.Var x'
+        | Var x -> let x' = if String_map.mem x bound then String_map.find x bound else x
+                                in Var x'
         | App (p, q) -> App (helper p bound, helper q bound)
         | Abs (var, body) ->    let var' = get_n_var () in
                                 let bound' = String_map.add var var' bound in
