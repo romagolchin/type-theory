@@ -12,6 +12,15 @@ let is_none x =
     | None -> true
     | _ -> false;;
 
+let rec longest_var t =
+    match t with
+    | Var x -> x
+    | App (p, q) -> let vp = longest_var p in
+                    let vq = longest_var q in
+                    if String.length vp < String.length vq
+                        then vq
+                        else vp  
+    | Abs (x, p) -> longest_var p ;;
 
 let rec set_of_free_vars t = match t with
     | Var x -> String_set.singleton x
@@ -118,18 +127,92 @@ let rec is_alpha_equivalent term term' =
 
 let is_normal_form term = term |> reduce |> is_none;;
 
-(* let () = 
-    let test_str = "(\\x.x \\x.x) (y \\y.x z (\\y.y))" in
-    let test = lambda_of_string test_str in
-    let test' = lambda_of_string  "(\\x1.x1 \\x.x) (y \\y1.x z (\\y.y))" in
-    let fv = free_vars test in
-    let after = test |> to_indexed_lambda fv |> from_indexed_lambda fv in
-    (* let simple = lambda_of_string "(\\x.x \\x.x) (y \\y.x)" in *)
-    let simple = lambda_of_string "\\x.x" in
-    printf "before: %s\nafter: %s\n" test_str (string_of_lambda after);
-    printf "%B\n" (is_alpha_equivalent test test');
-    print_string_list (free_vars test);
-    printf "Nice form of %s is %s\n" (string_of_lambda test) (test |> to_indexed_lambda fv |> from_indexed_lambda fv |> string_of_lambda);
-    printf "%s reduces to %s\n" (string_of_lambda simple) (simple |> normal_beta_reduction |> string_of_lambda);
-    printf "%s\n" (string_of_lambda simple);
-    printf "%s\n" ("(y \\x1.x) \\x2.x2" |> lambda_of_string |> string_of_lambda); *)
+
+let cnt = ref 0;;
+let get_n_var () = 
+    cnt := !cnt + 1;
+    ("n_var_" ^ string_of_int !cnt);;
+
+
+let rename_lambda map term =
+    let rec helper t bound = 
+        match t with
+        | Common.Var x -> let x' = if String_map.mem x bound then String_map.find x bound else x
+                                in Common.Var x'
+        | App (p, q) -> App (helper p bound, helper q bound)
+        | Abs (var, body) ->    let var' = get_n_var () in
+                                let bound' = String_map.add var var' bound in
+            Abs (var', helper body bound') in
+    helper term map;;
+
+
+
+type ref_lambda = RVar of string | RApp of (ref_lambda ref * ref_lambda ref)  | RAbs of (string * ref_lambda ref)
+
+let rec to_ref_lambda (t : lambda) : ref_lambda = 
+    match t with
+        | Var x -> RVar x
+        | App (p, q) -> RApp (ref (to_ref_lambda p), ref (to_ref_lambda q))
+        | Abs (x, p) -> RAbs (x, ref (to_ref_lambda p)) ;;   
+
+let rec from_ref_lambda (rt : ref_lambda ref) : lambda =
+    match !rt with
+    | RVar x -> Var x
+    | RApp (p, q) -> App (from_ref_lambda p, from_ref_lambda q)
+    | RAbs (x, p) -> Abs (x, from_ref_lambda p)
+
+let ($) f g = fun x -> f (g x)
+
+let string_of_ref_lambda = string_of_lambda $ from_ref_lambda 
+
+let reduce_to_normal_form term =
+    let rec ref_subst (what : ref_lambda ref)  (where : ref_lambda ref) (var : string) = 
+        (* printf "what = %s where = %s var = %s\n" (string_of_ref_lambda what) (string_of_ref_lambda where) var; *)
+        match !where with
+        | RVar x ->  
+            if var = x then where := !what
+        | RApp (p, q) ->  ref_subst what p var; ref_subst what q var
+        | RAbs (x, p) -> if var <> x then ref_subst what p var
+    in
+    let rec ref_reduce (rt : ref_lambda ref) : ref_lambda ref option =
+        match !rt with
+        | RApp ({ contents = RAbs (x, body) }, q) ->
+                (* printf "body = %s\n" (body |> from_ref_lambda |> string_of_lambda); *)
+                let n_var = get_n_var () in 
+                let map = String_map.singleton x n_var in
+                rt := to_ref_lambda (rename_lambda map (from_ref_lambda body));              
+                (* rt := to_ref_lambda (from_ref_lambda body); *)
+                ref_subst q rt n_var;
+                (* ref_subst q rt x; *)
+                Some rt 
+        | RApp (p, q) -> 
+            let res_p = ref_reduce p in
+                ( match res_p with
+                | Some _ -> Some rt 
+                | _ -> let res_q = ref_reduce q in
+                    ( match res_q with
+                    | Some _ -> Some rt
+                    | _ -> None
+
+                    )
+                )
+        | RAbs (x, body) ->
+            let res = ref_reduce body in
+            ( match res with
+            | Some _ -> Some rt
+            | _ -> None
+            )
+        | RVar _ -> None
+    in
+    let rec loop (rt : ref_lambda ref) : ref_lambda ref =
+        let res = ref_reduce rt in
+        (* Printf.printf "cur: %s\n" (some |> from_ref_lambda |> string_of_lambda); *)
+        match res with
+        | None -> rt
+        | Some some -> 
+            (* Printf.printf "cur: %s\n" (some |> from_ref_lambda |> string_of_lambda); *)
+            loop some in
+    printf "Renamed term: %s\n" ((string_of_lambda $ (rename_lambda String_map.empty) ) term);
+    let ref_term = ref (term |> (rename_lambda String_map.empty) |> to_ref_lambda) in
+    ref_term |> loop |> from_ref_lambda
+;;
