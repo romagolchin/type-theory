@@ -1,0 +1,1 @@
+ocamlc -g -I ../1/ -I ../1_red/ -I ../ -I ../2_unify/ ../1/hw1.mli ../1/hw1.ml ../1_red/hw1_reduction.ml  ../2_unify/hw2_unify.mli ../2_unify/hw2_unify.ml hw2_inference.mli hw2_inference.ml test_inference.ml -o hw2_inference.exe

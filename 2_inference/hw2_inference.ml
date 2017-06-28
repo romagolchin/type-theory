@@ -11,14 +11,8 @@ type simp_type = S_Elem of string | S_Arrow of simp_type * simp_type
 type inference_result = ((string * simp_type) list * simp_type) option
 type hm_type = HM_Elem of string | HM_Arrow of hm_type * hm_type | HM_ForAll of string * hm_type
 
-type hm_lambda = HM_Var of string | HM_Abs of string * lambda | HM_App of lambda * lambda | HM_Let of string * lambda * lambda
+type hm_lambda = HM_Var of string | HM_Abs of string * hm_lambda | HM_App of hm_lambda * hm_lambda | HM_Let of string * hm_lambda * hm_lambda
 
-
-let rec string_of_type tp =
-    match tp with
-    | S_Elem x -> x
-    | S_Arrow (p, q) -> sprintf "(%s) -> %s" (string_of_type p) (string_of_type q) 
-;;
 
 
 
@@ -79,25 +73,137 @@ let infer_simp_type term =
                     Some (var_types, whole_type);;
 
 
-let print_infer_res res =
-    match res with
-    | None -> printf "No type\n"
-    | Some (var_types, tp) -> 
-            printf "Types of vars\n";
-            List.iter (fun (v, t) -> printf "%s : %s\n" v (string_of_type t)) var_types;
-            printf "Whole term: %s\n" (string_of_type tp)
-        ;;
 
-let () = 
-    let i = Hw1.lambda_of_string "\\x.x" in
-    let k = Hw1.lambda_of_string "\\x.\\y.x" in
-    let s = Hw1.lambda_of_string "\\x.\\y.\\z.x z (y z)" in
-    let t = Hw1.lambda_of_string "\\x.\\y.\\z.x z y" in
-    let fls = Hw1.lambda_of_string "\\x.\\y.y" in
-    let vara = Hw1.Var "a" in
-    let varb = Hw1.Var "b" in
-    let neg = Abs ("a", App (App (vara, fls), k)) in
-    let xor = Abs ("a", Abs ("b", App (App (vara, App (neg, varb)), varb))) in
-    let test = [App (App (k, vara), varb); App (vara, s); i; k; s; t; App (s, k); App (App (s, k), k); App (i, App (i, s)); neg; xor] in
-    List.iter (fun item -> printf "Term: %s\n" (rename_lambda  item |> Hw1.string_of_lambda);
-                         item |> infer_simp_type |> print_infer_res ) test;;
+exception W_exc of string;;
+let algorithm_w hml =
+    let cnt = ref 0 in
+    let get_next_name () = 
+        cnt := !cnt + 3;
+        "next_type_" ^ (string_of_int !cnt) in
+    let get_init_name () = 
+        cnt := !cnt + 2;
+        "init_type_" ^ (string_of_int !cnt) in
+
+    let rec free_tvars hmt : String_set.t = 
+        match hmt with
+        | HM_Elem x -> String_set.singleton x
+        | HM_ForAll (x, t) -> String_set.remove x (free_tvars t)
+        | HM_Arrow (p, q) -> String_set.union (free_tvars p) (free_tvars q)
+    in
+
+    let free_tvars_context (cont : hm_type String_map.t) = 
+        String_map.fold (fun var hmt ftv -> String_set.union ftv (free_tvars hmt)) cont String_set.empty
+    in
+
+    let rec free_vars hml = 
+        match hml with
+        | HM_Var x -> String_set.singleton x
+        | HM_App (p, q) -> String_set.union (free_vars p) (free_vars q)
+        | HM_Abs (x, p) -> String_set.remove x (free_vars p)
+        (* (\\x.p2) p1 *)
+        | HM_Let (x, p1, p2) -> String_set.union (String_set.remove x (free_vars p2)) (free_vars p1)
+    in
+
+    (* quantify type using vars from FV(hmt) \ FV(cont) *)
+    let closure hmt cont = 
+        let tmp = String_set.diff (free_tvars hmt) (free_tvars_context cont) in
+        String_set.fold (fun var acc -> HM_ForAll (var, acc)) tmp hmt
+    in
+
+    let rec apply_subst (sub : hm_type String_map.t) (hmt : hm_type) : hm_type = 
+        match hmt with
+        | HM_Elem x ->  if String_map.mem x sub 
+                            then (String_map.find x sub)
+                        else hmt
+        | HM_ForAll (x, t) -> HM_ForAll (x, apply_subst (String_map.remove x sub) t)
+        | HM_Arrow (p, q) -> HM_Arrow (apply_subst sub p, apply_subst sub q)
+
+    in
+
+    let rec hmt_to_alg_term hmt =  
+        match hmt with
+        | HM_Elem x -> Hw2_unify.Var x
+        | HM_Arrow (p, q) -> Hw2_unify.Fun ("A", [(hmt_to_alg_term p); (hmt_to_alg_term q) ])
+        | _ -> failwith "hmt_to_alg_term : unexpected quantifier"
+    in
+
+    let rec alg_term_to_hmt at =  
+        match at with
+        | Hw2_unify.Var x -> HM_Elem x
+        | Hw2_unify.Fun (_, args) -> HM_Arrow ( (alg_term_to_hmt (List.nth args 0)), 
+                                                           alg_term_to_hmt (List.nth args 1) )
+    in
+
+    let subst_at_to_subst_hmt (s_at : (string * algebraic_term) list) : hm_type String_map.t = 
+        List.fold_left (fun acc (var, at) -> String_map.add var (alg_term_to_hmt at) acc) String_map.empty s_at
+    in
+
+
+    let apply_subst_context sub cont = 
+        String_map.map (fun hmt -> apply_subst sub hmt) cont
+    in
+
+
+    let ($) sub1 sub2 =  
+        let tmp = String_map.map (fun t -> apply_subst sub1 t) sub2 in
+        String_map.fold (fun k v map -> if String_map.mem k map 
+                                            then map
+                                            else String_map.add k v map ) sub1 tmp
+    in
+
+    let pair_map f (x, y) = (f x, f y) in
+
+    let rec drop_quantifiers hmt =  
+        match hmt with
+        | HM_ForAll (x, p) -> drop_quantifiers (apply_subst (String_map.singleton x (HM_Elem (get_next_name ())) ) p)
+        | _ -> hmt
+    in 
+
+
+    let rec helper cont (hml : hm_lambda) = 
+        match hml with
+        | HM_Var x ->
+            if String_map.mem x cont then 
+                let tx = String_map.find x cont in
+                (String_map.empty, drop_quantifiers tx)
+            else raise (W_exc (sprintf "var %s is not in context" x))
+        | HM_App (e1, e2) -> 
+            (
+            let (s1, t1) = helper cont e1 in
+            let (s2, t2) = helper (apply_subst_context s1 cont) e2 in 
+            let t1' = apply_subst s2 t1 in
+            let new_tvar = HM_Elem (get_next_name ()) in 
+            let t2' = HM_Arrow (t2, new_tvar) in
+            let eq = pair_map hmt_to_alg_term (t1', t2')  in  
+            match Hw2_unify.solve_system [eq] with
+            | Some sol -> 
+                let v_sub = subst_at_to_subst_hmt sol in
+                let comp = v_sub $ s2 $ s1 in 
+                (comp, apply_subst comp new_tvar)
+            | _ -> raise (W_exc "unification failed")
+            )
+        | HM_Abs (x, e1) -> 
+            let new_tvar = HM_Elem (get_next_name ()) in
+            let cont' = String_map.add x new_tvar cont in 
+            let s1, t1 = helper cont' e1 in
+            (s1, HM_Arrow (apply_subst s1 new_tvar, t1))
+        | HM_Let (x, e1, e2) ->
+            let s1, t1 = helper cont e1 in
+            let s1_cont = apply_subst_context s1 cont in
+            let s1_cont_x = apply_subst_context s1 (String_map.remove x cont) in
+            let cl = closure t1 s1_cont in
+            let s2, t2 = helper (String_map.add x cl s1_cont_x) e2 in
+            (s2 $ s1, t2)
+    in
+
+    let fv = free_vars hml in
+    let init_cont = String_set.fold (fun x map -> String_map.add x (HM_Elem (get_init_name ())) map) fv String_map.empty in 
+
+    try
+        let (sub, tp) = helper init_cont hml in Some (String_map.bindings sub, tp)
+    with
+    | _ -> None
+
+
+
+;;

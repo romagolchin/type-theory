@@ -68,7 +68,7 @@ let solve_system system =
 	push_all system;
 	let to_solution ready = 
 		(* Printf.printf "Solved\n"; *)
-		Printf.printf "%s\n" (string_of_sys ready);
+		(* Printf.printf "%s\n" (string_of_sys ready); *)
 		List.fold_left (fun res (lhs, rhs) -> match lhs with
 										| Var x -> (match res with
 											| Some some -> Some ((x, rhs) :: some)
